@@ -16,15 +16,17 @@ class Welcome(Slide):
         self.add(myOwl)
         self.wait()
         owl.wave(self)
-        self.pause()
-        self.play(*owl.reset(), owl.ear_wink())
+        self.play(*owl.reset())
+        self.wait(2)
+        self.play(owl.ear_wink())
+        self.wait()
 
 
 class Intro(Slide):
     caption = "Why would we want to use fixed sized block allocators?"
     title = Title(caption)
     reasons = BulletedList("No memory fragmentation",
-                           "Stable runtime"
+                           "Stable runtime",
                            "Use of containers (std::list, std::map...)",
                            "Control over heap usage")
 
@@ -38,6 +40,7 @@ class Intro(Slide):
 
         self.play(FadeIn(self.reasons))
         self.pause()
+        self.wait()
 
 
 class CodeAppearAnimation(Animation):
@@ -69,7 +72,7 @@ class CodeAppearAnimation(Animation):
             self.mobject.scale(1)
             self.mobject.move_to(self.mobject.starting_pos)
         else:
-            self.mobject.set_opacity(1 - normalized_alpha_fade_out)
+            self.mobject.set_opacity((1 - normalized_alpha_fade_out) )
 
     def clean_up_from_scene(self, scene: Scene) -> None:
         super().clean_up_from_scene(scene)
@@ -77,13 +80,14 @@ class CodeAppearAnimation(Animation):
 
 
 class HeapFragmentationProblem(Slide):
-    title = Title("Memory Fragmentation")
+    title = Title("Why is heap allocation a problem?")
 
     def construct(self):
-        self.add(Intro.title)
-        self.add(Intro.reasons)
-        self.play(FadeOut(Intro.title))
-        self.play(Intro.reasons.animate.become(self.title))
+        t = Intro.title
+        self.add(t)
+        caption = Intro.reasons
+        self.add(caption)
+        self.play(FadeOut(t), caption.animate.become(Title("Heap Fragmentation")))
 
         self.wait()
 
@@ -143,15 +147,15 @@ class HeapFragmentationProblem(Slide):
         random.seed(42)
         self.play(AnimationGroup(*[AnimationGroup(FadeIn(r.become(
             Rectangle(width=r.width, height=r.height, fill_opacity=0.5, color=random_color()).move_to(r.get_center()))),
-            CodeAppearAnimation(gen_malloc_code()), run_time=runtime) for r in
+             run_time=runtime) for r in
             heap_blocks[:num_start_mallocs]], lag_ratio=0.8))
 
         filled_blocks = list(range(num_start_mallocs))
         free_blocks = []
-        for i in range(10):
+        for i in range(50):
             if random.random() < 0.4:  # free
                 idx = random.choice(filled_blocks)
-                self.play(FadeOut(heap_blocks[idx]), CodeAppearAnimation(gen_free_code()),
+                self.play(FadeOut(heap_blocks[idx]),
                           run_time=runtime)
                 filled_blocks.remove(idx)
                 free_blocks.append(idx)
@@ -163,7 +167,7 @@ class HeapFragmentationProblem(Slide):
                     self.play(FadeIn(r.become(
                         Rectangle(width=new_width, height=r.height, fill_opacity=0.5, color=random_color()).move_to(
                             r.get_center() + LEFT * r.width / 2 + RIGHT * new_width / 2))),
-                        CodeAppearAnimation(gen_malloc_code()), run_time=runtime)
+                         run_time=runtime)
                     filled_blocks.append(idx)
                     free_blocks.remove(idx)
 
@@ -175,18 +179,18 @@ class HeapFragmentationProblem(Slide):
                             self.play(FadeIn(r.become(
                                 Rectangle(width=r.width, height=r.height, fill_opacity=0.5,
                                           color=random_color()).move_to(r.get_center()))),
-                                CodeAppearAnimation(gen_malloc_code()), run_time=runtime)
+                                 run_time=runtime)
                             filled_blocks.append(idx)
 
         self.pause()
         obj_fade_out = self.mobjects.copy()
-        self.add(self.title)
+        obj_fade_out.remove(caption)
         self.play(*[FadeOut(o) for o in obj_fade_out])
 
         conclusionstr = "Why is heap allocation a problem?"
         intermediate_conclusion = Text(conclusionstr)
         self.play(Write(intermediate_conclusion))
-        self.play(intermediate_conclusion.animate.become(Title(conclusionstr)), FadeOut(self.title))
+        self.play(intermediate_conclusion.animate.become(Title(conclusionstr)), FadeOut(caption))
         self.title = Title(conclusionstr)
         reasons = BulletedList("Unpredictable heap space", "Unpredictable runtime")
         self.play(FadeIn(reasons))
@@ -201,7 +205,7 @@ class Allocator(Slide):
     def construct(self):
         self.title = HeapFragmentationProblem.title
         self.add(self.title)
-        self.play(self.title.animate.become(Title("The fixed sized Allocator")))
+        self.play(self.title.animate.become(Title("The fixed sized block allocator")))
 
         idea_sketch = BulletedList("Create fixed sized block pool", "recycle freed memory")
         self.play(Write(idea_sketch))
@@ -243,7 +247,13 @@ class Allocator(Slide):
             DECLARE_ALLOCATOR 
         };
         """
-        self.play(myClassCode.animate.become(Code(code=code3, language="cpp", style="monokai")))
+
+        code4_impl = r"""
+        IMPLEMENT_ALLOCATOR(MyObj, 100, 0)
+        """
+        code4impl_code = Code(code=code4_impl, language="cpp", style="monokai").shift(DR * 2)
+
+        self.play(myClassCode.animate.become(Code(code=code3, language="cpp", style="monokai")), FadeIn(code4impl_code))
         self.wait()
         self.pause()
 
@@ -263,7 +273,7 @@ class Allocator(Slide):
         block_height = (heap_height - spacing * (displayed_rows + 1)) / displayed_rows
 
         self.play(myClassCode.animate.next_to(heap, UL).shift(RIGHT * myClassCode.width), FadeIn(heap),
-                  FadeIn(heap_caption), Write(allocator_text))
+                  FadeIn(heap_caption), Write(allocator_text), FadeOut(code4impl_code))
         self.pause()
 
         num_entries = 5
@@ -298,12 +308,12 @@ class Allocator(Slide):
             return free_code
 
         self.play(AnimationGroup(AnimationGroup(
-            *[AnimationGroup(myClassCode.copy().animate.become(block), CodeAppearAnimation(gen_malloc_code())) for block
+            *[AnimationGroup(myClassCode.copy().animate.become(block)) for block
               in heap_blocks],
             lag_ratio=0.8),
             myClassCode.copy().animate.become(Text("...", color=GREEN_C).move_to(last_block.get_center())),
             lag_ratio=1))
-
+        self.pause()
         ### intermediate Cleanup
         obj_to_remove = self.mobjects.copy()
         obj_to_remove.remove(self.title)
@@ -340,14 +350,15 @@ class Allocator(Slide):
         free_list_obj = always_redraw(free_list)
         self.add(free_list_obj)
         self.play(popuplist_scale.animate.set_value(1))
+        self.pause()
         random.seed(42)
-        for i in range(10):
+        for i in range(20):
             if random.random() < 0.3 and len(filled_blocks) > 0:  # free
                 idx = random.choice(filled_blocks)
                 r = heap_blocks[idx]
                 self.play(
                     r.animate.become(Rectangle(width=r.width, height=r.height, fill_opacity=0, color=WHITE).move_to(
-                        r.get_center())), CodeAppearAnimation(gen_free_code()), run_time=runtime)
+                        r.get_center())),  run_time=runtime)
                 filled_blocks.remove(idx)
                 free_blocks.append(idx)
             else:
@@ -356,15 +367,16 @@ class Allocator(Slide):
                     r = heap_blocks[idx]
                     self.play(r.animate.become(
                         Rectangle(width=r.width, height=r.height, fill_opacity=0.5, color=GREEN_C).move_to(
-                            r.get_center()),
-                        CodeAppearAnimation(gen_malloc_code())), run_time=runtime)
+                            r.get_center())),
+                         run_time=runtime)
                     filled_blocks.append(idx)
                     free_blocks.remove(idx)
-
+        self.pause()
         ### intermediate Cleanup
         obj_to_remove = self.mobjects.copy()
         obj_to_remove.remove(self.title)
-        self.play(*[FadeOut(r) for r in obj_to_remove])
+        self.play(FadeOut(*obj_to_remove), FadeIn(self.main))
+        self.wait(3)
 
 
 class AllocatorProblem(Slide):
@@ -380,6 +392,7 @@ class AllocatorProblem(Slide):
         self.play(FadeOut(Allocator.title), self.title.animate.become(Title("The Allocator Problem")),
                   Write(problem_allocator))
         self.wait(frozen_frame=False)
+        self.pause()
         self.play(problem_allocator.animate.shift(UL * 2))
 
         ###############
@@ -448,6 +461,7 @@ class AllocatorProblem(Slide):
         self.play(FadeIn(Cross(block, scale_factor=1.1), rate_func=there_and_back_with_pause))
         self.play(FadeIn(Cross(block, scale_factor=1.1), rate_func=there_and_back_with_pause))
         self.play(FadeIn(cross))
+        self.pause()
 
         ### intermediate Cleanup
         obj_to_remove = self.mobjects.copy()
@@ -458,7 +472,7 @@ class AllocatorProblem(Slide):
         self.play(g.animate.become(question))
         self.wait(frozen_frame=False)
         self.pause()
-        self.play(question.animate.become(self.last_title))
+        self.play(g.animate.become(self.last_title), FadeOut(self.title))
         self.wait()
 
 
@@ -606,6 +620,7 @@ class XAllocator(Slide):
         malloc_code.shift(RIGHT * malloc_code.width)
         self.play(Create(malloc_code))
         self.wait()
+        self.pause()
         newBlock = malloc_code.copy()
         selected_row = 2
         id = free_idx[selected_row][0]
@@ -627,7 +642,7 @@ class XAllocator(Slide):
         self.play(FadeOut(newBlock), FadeOut(malloc_code), selected_block.animate.become(
             Rectangle(width=selected_block.width, height=selected_block.height, fill_opacity=0.5, color=BLUE_A).move_to(
                 selected_block.get_center())))
-
+        self.pause()
         free_idx[selected_row].remove(id)
         free_idx_list = []
         for key, value in free_idx.items():
@@ -698,7 +713,7 @@ class XAllocator(Slide):
         self.wait()
         self.pause()
         self.play(cons_text.animate.scale(0.9).shift(UR * 1).shift(RIGHT * 2), FadeIn(compromise_text))
-
+        self.pause()
         textgroup = VGroup(pros_text, cons_text, compromise_text)
 
         string_question = "And how can we use it now?"
@@ -746,7 +761,7 @@ class STLAllocator(Slide):
 
         self.play(container_group.animate.shift(LEFT * 2), FadeIn(smart_ptr_txt), FadeIn(smart2))
 
-        group = VGroup(smart2,smart_ptr_txt,container_group)
+        group = VGroup(smart2, smart_ptr_txt, container_group)
         self.pause()
         self.play(group.animate.become(Text("And even more good news!")))
         self.wait(2)
@@ -828,6 +843,7 @@ class TimingComparison(Slide):
         self.play(*[FadeOut(t) for t in all_objects_without_caption])
         self.play(title.animate.become(Title(r"Pros \& Cons")))
         self.wait(frozen_frame=False)
+
 
 class Conclusion(Slide):
     def construct(self):
